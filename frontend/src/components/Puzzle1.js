@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useRef } from "react";
 import {
-  Button, Typography, Dialog, DialogActions, DialogContent, DialogTitle,
-  IconButton
+  Button, Typography, Dialog, DialogActions, DialogContent, DialogTitle, IconButton
+  // , Table, TableHead, TableRow, TableCell, TableBody
 } from "@mui/material";
 import axios from "axios";
 import PlayCircleOutlineSharpIcon from '@mui/icons-material/PlayCircleOutlineSharp';
@@ -13,12 +13,13 @@ import InsertEmoticonIcon from '@mui/icons-material/InsertEmoticon';
 import InfoIcon from '@mui/icons-material/Info';
 import CloseIcon from '@mui/icons-material/Close';
 import TipsAndUpdatesIcon from '@mui/icons-material/TipsAndUpdates';
+//import EmojiEventsIcon from '@mui/icons-material/EmojiEvents';
 import { useNavigate } from "react-router-dom";
 import Navbar from "./Navbar";
 
 const Puzzle1 = () => {
-  const [boardSize, setBoardSize] = useState(5);
-  const [board, setBoard] = useState([]);
+  const boardSize = 8;
+  const [board, setBoard] = useState(Array(boardSize).fill(-1));
   const [colors, setColors] = useState([]);
   const [timeElapsed, setTimeElapsed] = useState(0);
   const [timerRunning, setTimerRunning] = useState(false);
@@ -29,8 +30,10 @@ const Puzzle1 = () => {
   const [showInfoDialog, setShowInfoDialog] = useState(false);
   const [showHintDialog, setShowHintDialog] = useState(false);
   const [hintMessage, setHintMessage] = useState("");
-
+  //const [showLeaderboardDialog, setShowLeaderboardDialog] = useState(false);
+  //const [leaderboardData, setLeaderboardData] = useState([]);
   const timerIntervalRef = useRef(null);
+
   const userId = "67d9147284d2d7833af40528";
   const room_id = "room1";
   const navigate = useNavigate();
@@ -38,16 +41,11 @@ const Puzzle1 = () => {
   useEffect(() => {
     axios.post("http://localhost:8000/game/generate", { user_id: userId })
       .then(res => {
-        console.log("Board:", res.data.board);
-        console.log("Colors:", res.data.colors);
-        console.log("Size:", res.data.size);
-        setBoardSize(res.data.size);
-        setBoard(res.data.board);
+        setBoard(Array(boardSize).fill(-1));
         setColors(res.data.colors);
       })
       .catch(console.error);
   }, []);
-  
 
   const startTimer = () => {
     if (timerRunning) return;
@@ -55,11 +53,7 @@ const Puzzle1 = () => {
     setTimerRunning(true);
     setTimeElapsed(0);
 
-    axios.post("http://localhost:8000/game/start", {
-      user_id: userId,
-      size: boardSize  // should be 5, 7, or 9
-    })
-    
+    axios.post("http://localhost:8000/game/start", { user_id: userId, room_id })
       .then(() => {
         timerIntervalRef.current = setInterval(() => setTimeElapsed(prev => prev + 1), 1000);
       })
@@ -67,12 +61,12 @@ const Puzzle1 = () => {
   };
 
   const endTimer = () => {
-    axios.post("http://localhost:8000/game/validate", { user_id: userId, board, colors })
+    axios.post("http://localhost:8000/game/validate", { user_id: userId, board, colors, room_id })
       .then(response => {
         if (response.data.valid) {
           setSolutionCorrect(true);
           setCompletionMessage("You have successfully completed the puzzle!");
-          axios.post("http://localhost:8000/game/end-timer", { user_id: userId, room_id , colors, size:board.length});
+          axios.post("http://localhost:8000/game/end-timer", { user_id: userId, room_id });
         } else {
           setCompletionMessage("OOPS! Incorrect solution! Keep trying.");
         }
@@ -82,7 +76,6 @@ const Puzzle1 = () => {
       })
       .catch(console.error);
   };
-  
 
   const restartTimer = () => {
     setTimeElapsed(0);
@@ -101,35 +94,20 @@ const Puzzle1 = () => {
     const newBoard = [...board];
     newBoard[row] = col;
     setBoard(newBoard);
-
-    axios.post("http://localhost:8000/game/validate", {
-      user_id: userId,
-      board: newBoard,
-      colors: colors
-    })
-    
-      .then(response => {
-        if (response.data.correct) {
-          endTimer();
-          setSolutionCorrect(true);
-        }
-      })
-      .catch(console.error);
   };
 
   const getHint = async () => {
     try {
-      const response = await axios.post('http://localhost:8000/game/hint', {
-        user_id: userId, // Make sure this is defined somewhere
+      const response = await axios.post("http://localhost:8000/game/hint", {
+        user_id: userId,
         board,
         colors,
+        room_id
       });
-  
-      console.log("Hint response:", response.data);
-  
+
       if (response.data.hint && Array.isArray(response.data.hint)) {
         const [row, col] = response.data.hint;
-        setHintMessage(`Try placing the 😀 on row ${row + 1}, column ${col + 1}`);
+        setHintMessage(`Try placing the 👑 on row ${row + 1}, column ${col + 1}`);
         setShowHintDialog(true);
       } else {
         alert("No Hints Available");
@@ -138,22 +116,15 @@ const Puzzle1 = () => {
       console.log("Error fetching hint", error);
     }
   };
-  
-  
+
   const getColorCode = (val) => {
     const colorMap = {
       1: "#f28b82", 2: "#fbbc04", 3: "#ccff90",
       4: "#a7ffeb", 5: "#aecbfa", 6: "#d7aefb",
       7: "#fdcfe8", 8: "#e6c9a8", 9: "#ffffff"
     };
-  
-    if (!colorMap[val]) {
-      console.warn("Missing color for value:", val);
-    }
-  
     return colorMap[val] || "#ffffff";
   };
-  
 
   const handleRetry = () => {
     setShowResultDialog(false);
@@ -161,6 +132,17 @@ const Puzzle1 = () => {
   };
 
   const handleNextPuzzle = () => navigate("/game/puzzle2");
+
+  // const openLeaderboard = () => {
+  //   // Replace with actual API call later
+  //   const mockData = [
+  //     { name: "Alice", time: 47 },
+  //     { name: "Bob", time: 55 },
+  //     { name: "Charlie", time: 65 },
+  //   ];
+  //   setLeaderboardData(mockData);
+  //   setShowLeaderboardDialog(true);
+  // };
 
   return (
     <div style={{
@@ -172,7 +154,7 @@ const Puzzle1 = () => {
         fontWeight: "bold", marginTop: "20px",
         display: "flex", alignItems: "center", justifyContent: "center"
       }}>
-        5 - 😀 Challenge
+        8 - 😀 Challenge
         <IconButton onClick={() => setShowInfoDialog(true)} style={{ color: "#b7a14e", marginLeft: "10px" }}>
           <InfoIcon />
         </IconButton>
@@ -200,7 +182,12 @@ const Puzzle1 = () => {
         </Button>
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: `repeat(${boardSize}, 40px)`, justifyContent: "center", marginTop: "20px" }}>
+      <div style={{
+        display: "grid",
+        gridTemplateColumns: `repeat(${boardSize}, 40px)`,
+        justifyContent: "center",
+        marginTop: "20px"
+      }}>
         {Array(boardSize).fill().map((_, row) =>
           Array(boardSize).fill().map((_, col) => (
             <div
@@ -219,9 +206,15 @@ const Puzzle1 = () => {
         )}
       </div>
 
-      <Button onClick={getHint} variant="contained" style={{ backgroundColor: "#b7a14e", color: "black", marginTop: "20px" }}>
-        <TipsAndUpdatesIcon /> Get Hint
-      </Button>
+      <div style={{ marginTop: "20px", display: "flex", justifyContent: "center", gap: "20px", flexWrap: "wrap" }}>
+        <Button onClick={getHint} variant="contained" style={{ backgroundColor: "#b7a14e", color: "black" }}>
+          <TipsAndUpdatesIcon /> Get Hint
+        </Button>
+
+        {/* <Button onClick={openLeaderboard} variant="contained" style={{ backgroundColor: "#b7a14e", color: "black" }}>
+          <EmojiEventsIcon /> View Leaderboard
+        </Button> */}
+      </div>
 
       {/* Hint Dialog */}
       <Dialog open={showHintDialog} onClose={() => setShowHintDialog(false)}
@@ -258,27 +251,45 @@ const Puzzle1 = () => {
       {/* Info Dialog */}
       <Dialog open={showInfoDialog} onClose={() => setShowInfoDialog(false)}
         PaperProps={{ sx: { backgroundColor: '#b7a14e', color: 'black' } }}>
-        <DialogTitle style={{ textAlign: "center", fontWeight: "bold" }}>
-          5 - 😀 Challenge Info
+        <DialogTitle>
+          <Typography variant="h6" style={{ fontWeight: 'bold', textAlign: 'center' }}>Info</Typography>
           <IconButton onClick={() => setShowInfoDialog(false)} style={{ position: "absolute", right: "10px", top: "10px" }}>
             <CloseIcon />
           </IconButton>
         </DialogTitle>
         <DialogContent>
-          <Typography style={{ textAlign: "center", marginBottom: "20px" }}>
-            Solve this puzzle to get a key and escape this room.
-          </Typography>
-          <Typography>
-            <strong>Rules:</strong>
-            <ul>
-              <li>The game is played on a standard 5x5 chessboard.</li>
-              <li>Place exactly 5 😀 emojis on the board without any attacking each other.</li>
-              <li>They attack vertically, horizontally, and diagonally.</li>
-              <li>No two emojis may share the same row, column, or diagonal.</li>
-            </ul>
-          </Typography>
+          <Typography>This is the 8×8 puzzle challenge. You need to place one "😀" on each row such that no two are in the same column or diagonal.</Typography>
         </DialogContent>
       </Dialog>
+
+      {/* Leaderboard Dialog
+      <Dialog open={showLeaderboardDialog} onClose={() => setShowLeaderboardDialog(false)}
+        PaperProps={{ sx: { backgroundColor: '#b7a14e', color: 'black' } }}>
+        <DialogTitle>
+          <Typography style={{ fontWeight: "bold", textAlign: "center" }}>Leaderboard 🏆</Typography>
+          <IconButton onClick={() => setShowLeaderboardDialog(false)} style={{ position: "absolute", right: "10px", top: "10px" }}>
+            <CloseIcon />
+          </IconButton>
+        </DialogTitle>
+        <DialogContent>
+          <Table>
+            <TableHead>
+              <TableRow>
+                <TableCell><strong>Name</strong></TableCell>
+                <TableCell><strong>Time (s)</strong></TableCell>
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {leaderboardData.map((player, index) => (
+                <TableRow key={index}>
+                  <TableCell>{player.name}</TableCell>
+                  <TableCell>{player.time}</TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </DialogContent>
+      </Dialog> */}
     </div>
   );
 };

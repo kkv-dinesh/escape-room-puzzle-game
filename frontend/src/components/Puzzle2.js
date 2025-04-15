@@ -1,9 +1,7 @@
-// frontend/src/components/Puzzle2.js
-
 import React, { useEffect, useState, useRef } from "react";
 import {
   Button, Typography, Dialog, DialogActions, DialogContent, DialogTitle,
-  IconButton
+  IconButton, TextField
 } from "@mui/material";
 import axios from "axios";
 import PlayCircleOutlineSharpIcon from '@mui/icons-material/PlayCircleOutlineSharp';
@@ -11,17 +9,16 @@ import HourglassTopIcon from '@mui/icons-material/HourglassTop';
 import RestartAltIcon from '@mui/icons-material/RestartAlt';
 import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline';
 import CancelRoundedIcon from '@mui/icons-material/CancelRounded';
-import InsertEmoticonIcon from '@mui/icons-material/InsertEmoticon';
 import InfoIcon from '@mui/icons-material/Info';
 import CloseIcon from '@mui/icons-material/Close';
 import TipsAndUpdatesIcon from '@mui/icons-material/TipsAndUpdates';
 import { useNavigate } from "react-router-dom";
 import Navbar from "./Navbar";
 
-const Puzzle2 = () => {
-  const [boardSize, setBoardSize] = useState(7);
+const Puzzle1 = () => {
+  const boardSize = 9;
   const [board, setBoard] = useState([]);
-  const [colors, setColors] = useState([]);
+  const [initialBoard, setInitialBoard] = useState([]);
   const [timeElapsed, setTimeElapsed] = useState(0);
   const [timerRunning, setTimerRunning] = useState(false);
   const [puzzleStarted, setPuzzleStarted] = useState(false);
@@ -34,15 +31,18 @@ const Puzzle2 = () => {
 
   const timerIntervalRef = useRef(null);
   const userId = "67d9147284d2d7833af40528";
-  const room_id = "room2";
+  const room_id = "room1";
   const navigate = useNavigate();
 
   useEffect(() => {
-    axios.post("http://localhost:8000/game/generate", { user_id: userId })
+    axios.post("http://localhost:8000/game/sudoku/generate", { user_id: userId })
       .then(res => {
-        setBoardSize(res.data.size);
-        setBoard(res.data.board);
-        setColors(res.data.colors);
+        if (res.data.board) {
+          setBoard(res.data.board);
+          setInitialBoard(res.data.board.map(row => [...row]));
+        } else {
+          console.error("Board not returned from API");
+        }
       })
       .catch(console.error);
   }, []);
@@ -53,21 +53,20 @@ const Puzzle2 = () => {
     setTimerRunning(true);
     setTimeElapsed(0);
 
-    axios.post("http://localhost:8000/game/start", {
-      user_id: userId,
-      size: boardSize
-    }).then(() => {
-      timerIntervalRef.current = setInterval(() => setTimeElapsed(prev => prev + 1), 1000);
-    }).catch(console.error);
+    axios.post("http://localhost:8000/game/sudoku/start", { user_id: userId, room_id })
+      .then(() => {
+        timerIntervalRef.current = setInterval(() => setTimeElapsed(prev => prev + 1), 1000);
+      })
+      .catch(console.error);
   };
 
   const endTimer = () => {
-    axios.post("http://localhost:8000/game/validate", { user_id: userId, board, colors, room_id })
+    axios.post("http://localhost:8000/game/sudoku/validate", { user_id: userId, board, room_id })
       .then(response => {
         if (response.data.valid) {
           setSolutionCorrect(true);
           setCompletionMessage("You have successfully completed the puzzle!");
-          axios.post("http://localhost:8000/game/end-timer", { user_id: userId, room_id, board,colors, size: board.length });
+          axios.post("http://localhost:8000/game/sudoku/end-timer", { user_id: userId, room_id });
         } else {
           setCompletionMessage("OOPS! Incorrect solution! Keep trying.");
         }
@@ -85,42 +84,34 @@ const Puzzle2 = () => {
   };
 
   const clearBoard = () => {
-    setBoard(Array(boardSize).fill(-1));
+    const cleared = board.map((row, rIdx) =>
+      row.map((cell, cIdx) => (initialBoard[rIdx][cIdx] === 0 ? 0 : cell))
+    );
+    setBoard(cleared);
     setSolutionCorrect(false);
     restartTimer();
   };
 
-  const placeQueen = (row, col) => {
-    if (!puzzleStarted || solutionCorrect) return;
-    const newBoard = [...board];
-    newBoard[row] = col;
-    setBoard(newBoard);
+  const updateCell = (row, col, value) => {
+    if (!puzzleStarted || solutionCorrect || initialBoard[row][col] !== 0) return;
 
-    axios.post("http://localhost:8000/game/validate", {
-      user_id: userId,
-      room_id,
-      board: newBoard,
-      colors: colors
-    }).then(response => {
-      if (response.data.correct) {
-        endTimer();
-        setSolutionCorrect(true);
-      }
-    }).catch(console.error);
+    const val = parseInt(value, 10);
+    const newBoard = board.map((r, i) => [...r]);
+    newBoard[row][col] = (val >= 1 && val <= 9) ? val : 0;
+    setBoard(newBoard);
   };
 
   const getHint = async () => {
     try {
-      const response = await axios.post('http://localhost:8000/game/hint', {
+      const response = await axios.post("http://localhost:8000/game/sudoku/hint", {
         user_id: userId,
         board,
-        room_id,
-        colors,
+        room_id
       });
 
       if (response.data.hint && Array.isArray(response.data.hint)) {
         const [row, col] = response.data.hint;
-        setHintMessage(`Try placing the 😀 on row ${row + 1}, column ${col + 1}`);
+        setHintMessage(`Try placing the number at row ${row + 1}, column ${col + 1}`);
         setShowHintDialog(true);
       } else {
         alert("No Hints Available");
@@ -130,30 +121,24 @@ const Puzzle2 = () => {
     }
   };
 
-  const getColorCode = (val) => {
-    const colorMap = {
-      1: "#f28b82", 2: "#fbbc04", 3: "#ccff90",
-      4: "#a7ffeb", 5: "#aecbfa", 6: "#d7aefb",
-      7: "#fdcfe8", 8: "#e6c9a8", 9: "#ffffff"
-    };
-    return colorMap[val] || "#ffffff";
-  };
-
   const handleRetry = () => {
     setShowResultDialog(false);
-    navigate("/game/puzzle2");
+    navigate("/game/puzzle1");
   };
 
-  const handleNextPuzzle = () => navigate("/game/puzzle3");
+  const handleNextPuzzle = () => navigate("/game/puzzle2");
 
   return (
     <div style={{
       backgroundColor: "black", minHeight: "100vh", color: "#b7a14e",
-      textAlign: "center", padding: "20px"
+      textAlign: "center", padding: "20px", fontFamily: 'Brandmark Sans, sans-serif'
     }}>
       <Navbar />
-      <Typography variant="h4" style={{ fontWeight: "bold", marginTop: "20px" }}>
-        7 - 😀 Challenge
+      <Typography variant="h4" style={{
+        fontWeight: "bold", marginTop: "20px",
+        display: "flex", alignItems: "center", justifyContent: "center"
+      }}>
+        9×9 Sudoku Puzzle
         <IconButton onClick={() => setShowInfoDialog(true)} style={{ color: "#b7a14e", marginLeft: "10px" }}>
           <InfoIcon />
         </IconButton>
@@ -181,24 +166,41 @@ const Puzzle2 = () => {
         </Button>
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: `repeat(${boardSize}, 40px)`, justifyContent: "center", marginTop: "20px" }}>
-        {Array(boardSize).fill().map((_, row) =>
-          Array(boardSize).fill().map((_, col) => (
-            <div
-              key={`${row}-${col}`}
-              onClick={() => placeQueen(row, col)}
-              style={{
-                width: "40px", height: "40px",
-                backgroundColor: getColorCode(colors[row]?.[col]),
-                border: "1px solid #b7a14e",
-                display: "flex", alignItems: "center", justifyContent: "center",
-                cursor: puzzleStarted && !solutionCorrect ? "pointer" : "not-allowed"
-              }}>
-              {board[row] === col ? <InsertEmoticonIcon style={{ color: "#000" }} /> : null}
-            </div>
-          ))
-        )}
-      </div>
+      {board.length > 0 ? (
+        <div style={{
+          display: "grid",
+          gridTemplateColumns: `repeat(${boardSize}, 40px)`,
+          justifyContent: "center",
+          marginTop: "20px"
+        }}>
+          {board.map((row, rowIndex) =>
+            row.map((cell, colIndex) => (
+              <TextField
+                key={`${rowIndex}-${colIndex}`}
+                value={cell === 0 ? '' : cell}
+                onChange={(e) => updateCell(rowIndex, colIndex, e.target.value)}
+                inputProps={{
+                  maxLength: 1,
+                  style: {
+                    textAlign: "center",
+                    fontWeight: initialBoard[rowIndex][colIndex] !== 0 ? "bold" : "normal"
+                  },
+                  readOnly: initialBoard[rowIndex][colIndex] !== 0
+                }}
+                sx={{
+                  width: 40, height: 40,
+                  '& .MuiInputBase-root': {
+                    height: "100%",
+                    backgroundColor: initialBoard[rowIndex][colIndex] === 0 ? "white" : "#ddd"
+                  }
+                }}
+              />
+            ))
+          )}
+        </div>
+      ) : (
+        <Typography sx={{ marginTop: 4 }}>Loading puzzle...</Typography>
+      )}
 
       <Button onClick={getHint} variant="contained" style={{ backgroundColor: "#b7a14e", color: "black", marginTop: "20px" }}>
         <TipsAndUpdatesIcon /> Get Hint
@@ -208,7 +210,7 @@ const Puzzle2 = () => {
       <Dialog open={showHintDialog} onClose={() => setShowHintDialog(false)}
         PaperProps={{ sx: { backgroundColor: '#b7a14e', color: 'black' } }}>
         <DialogTitle>
-          <Typography style={{ fontWeight: "bold", textAlign: "center" }}>Here is your hint 🧠</Typography>
+          <Typography style={{ fontWeight: "bold", textAlign: "center" }}>Here is your hint 🫣</Typography>
           <IconButton onClick={() => setShowHintDialog(false)} style={{ position: "absolute", right: "10px", top: "10px" }}>
             <CloseIcon />
           </IconButton>
@@ -239,29 +241,18 @@ const Puzzle2 = () => {
       {/* Info Dialog */}
       <Dialog open={showInfoDialog} onClose={() => setShowInfoDialog(false)}
         PaperProps={{ sx: { backgroundColor: '#b7a14e', color: 'black' } }}>
-        <DialogTitle style={{ textAlign: "center", fontWeight: "bold" }}>
-          7 - 😀 Challenge Info
+        <DialogTitle>
+          <Typography variant="h6" style={{ fontWeight: 'bold', textAlign: 'center' }}>Info</Typography>
           <IconButton onClick={() => setShowInfoDialog(false)} style={{ position: "absolute", right: "10px", top: "10px" }}>
             <CloseIcon />
           </IconButton>
         </DialogTitle>
         <DialogContent>
-          <Typography style={{ textAlign: "center", marginBottom: "20px" }}>
-            Solve this puzzle to escape to the final challenge!
-          </Typography>
-          <Typography>
-            <strong>Rules:</strong>
-            <ul>
-              <li>The game is played on a 7x7 chessboard.</li>
-              <li>Place 7 😀 emojis, one for each row, such that none attack each other.</li>
-              <li>No two emojis may share the same row, column, or diagonal.</li>
-              <li>Each emoji must be placed on a square of its designated color group.</li>
-            </ul>
-          </Typography>
+          <Typography>This is the 9×9 Sudoku puzzle. Fill the grid with numbers from 1-9 such that each row, column, and subgrid contains all digits exactly once.</Typography>
         </DialogContent>
       </Dialog>
     </div>
   );
 };
 
-export default Puzzle2;
+export default Puzzle1;

@@ -1,14 +1,29 @@
-def get_next_hint(board, colors, room_id):
-    board_sizes = {"room1": 5, "room2": 7, "room3": 9}
-    n = board_sizes.get(room_id, None)
-    if n is None or len(board) != n:
-        return None
+def get_next_hint(board, colors, room_id=None):
+    n = 8
+    if len(board) != n:
+        return {"hint": None, "invalid": []}
+
+    used_colors = set()
+    invalid_indices = []
+
+    for row in range(n):
+        col = board[row]
+        if col == -1:
+            continue
+
+        color = colors[row][col]
+        if color in used_colors or not is_safe(board, row, col):
+            print(f"Invalid at row {row}: color={color}, col={col}, board={board}")
+            invalid_indices.append(row)
+        else:
+            used_colors.add(color)
+
+    if invalid_indices:
+        return {"hint": None, "invalid": invalid_indices}
 
     row = next((r for r in range(n) if board[r] == -1), None)
     if row is None:
-        return None  # Board is full
-
-    used_colors = {colors[r][c] for r, c in enumerate(board) if c != -1}
+        return {"hint": None, "invalid": []}  # board is full
 
     for col in range(n):
         current_color = colors[row][col]
@@ -19,14 +34,14 @@ def get_next_hint(board, colors, room_id):
 
         trial_board = board[:]
         trial_board[row] = col
+        print(f"Trying hint at row={row}, col={col}, used_colors={used_colors}")
         if can_solve_from(trial_board, colors, row + 1, used_colors | {current_color}):
-            return (row, col)
+            return {"hint": (row, col), "invalid": []}
 
-    return None
-
+    return {"hint": None, "invalid": []}
 
 def can_solve_from(board, colors, row, used_colors):
-    n = len(board)
+    n = 8
     if row == n:
         return True
 
@@ -39,6 +54,7 @@ def can_solve_from(board, colors, row, used_colors):
             continue
         if is_safe(board, row, col):
             board[row] = col
+            print(f"can_solve_from: placing at row={row}, col={col}, used_colors={used_colors}")
             if can_solve_from(board, colors, row + 1, used_colors | {current_color}):
                 board[row] = -1
                 return True
@@ -47,7 +63,7 @@ def can_solve_from(board, colors, row, used_colors):
 
 
 def is_safe(board, row, col):
-    for r in range(len(board)):
+    for r in range(row):
         c = board[r]
         if c == -1:
             continue

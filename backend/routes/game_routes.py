@@ -8,10 +8,14 @@ from algorithms.dp_validator import is_valid_board
 from algorithms.greedy_hint import get_next_hint
 from database import game_sessions
 from models import GameState
+from algorithms.sudoku_generator import generate_sudoku_puzzle
+from algorithms.sudoku_validator import is_valid_sudoku
+from algorithms.sudoku_hint import get_sudoku_hint
+
 
 router = APIRouter()
 
-# Models
+# -------- N QUEENS MODELS --------
 class BoardData(BaseModel):
     user_id: str
     room_id: str
@@ -21,19 +25,19 @@ class BoardData(BaseModel):
 class UserInfo(BaseModel):
     user_id: str
 
-class PuzzleCompletion(BaseModel):
-    user_id: str
-    puzzle_number: int
-
 class TimerData(BaseModel):
     user_id: str
-    size: int  # 5, 7, or 9
-    puzzle_time: Optional[str] = None 
-
-# Size -> puzzle number mapping
-SIZE_MAP = {5: 1, 7: 2, 9: 3}
+    puzzle_time: Optional[str] = None
 
 
+# -------- SUDOKU MODELS --------
+class SudokuBoard(BaseModel):
+    user_id: str
+    board: List[List[int]]  # 9x9 grid
+
+
+
+# ------------------------------------------- N QUEENS GAME -------------------------------------------
 # -------- BOARD GENERATION --------
 @router.post("/generate")
 def generate_board(data: UserInfo):
@@ -43,131 +47,89 @@ def generate_board(data: UserInfo):
         game_sessions.insert_one({
             "user_id": data.user_id,
             "start_time": datetime.utcnow(),
-            "current_puzzle": 1,
-            "puzzle1_start": None, "puzzle1_end": None,
-            "puzzle2_start": None, "puzzle2_end": None,
-            "puzzle3_start": None, "puzzle3_end": None,
+            "puzzle_start": None,
+            "puzzle_end": None,
             "total_time": None
         })
-        puzzle_number = 1
-    else:
-        puzzle_number = room.get("current_puzzle", 1)
-        if puzzle_number > 3:
-            raise HTTPException(status_code=400, detail="All puzzles already completed")
-
-    n = {1: 5, 2: 7, 3: 9}[puzzle_number]
+    elif room.get("puzzle_end"):
+        raise HTTPException(status_code=400, detail="Puzzle already completed")
 
     return {
-        "board": [-1] * n,
-        "colors": predefined_colors[n],
-        "size": n
+        "board": [-1] * 8,
+        "colors": predefined_colors[8],
+        "size": 8
     }
 
 
 # -------- START TIMER --------
 @router.post("/start")
 def start_timer(data: TimerData):
-    puzzle_number = SIZE_MAP.get(data.size)
-    if not puzzle_number:
-        raise HTTPException(status_code=400, detail="Invalid board size")
-
     session = game_sessions.find_one({"user_id": data.user_id})
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
 
-    field = f"puzzle{puzzle_number}_start"
-    if session.get(field):
+    if session.get("puzzle_start"):
         return {"message": "Puzzle already started"}
 
     game_sessions.update_one(
         {"user_id": data.user_id},
-        {"$set": {field: datetime.utcnow()}}
+        {"$set": {"puzzle_start": datetime.utcnow()}}
     )
-    return {"message": f"Puzzle {puzzle_number} started"}
+    return {"message": "Puzzle started"}
 
 
-# -------- END TIMER & COMPLETE PUZZLE --------
+# -------- END TIMER --------
 @router.post("/end-timer")
 def end_timer(data: TimerData):
-    puzzle_number = SIZE_MAP.get(data.size)
-    if not puzzle_number:
-        raise HTTPException(status_code=400, detail="Invalid board size")
-
     session = game_sessions.find_one({"user_id": data.user_id})
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
 
-    start_field = f"puzzle{puzzle_number}_start"
-    end_field = f"puzzle{puzzle_number}_end"
-    time_field = f"puzzle{puzzle_number}_time"
-
-    start_time = session.get(start_field)
+    start_time = session.get("puzzle_start")
     if not start_time:
         raise HTTPException(status_code=400, detail="Puzzle not started yet")
 
     end_time = datetime.utcnow()
-
-    # Calculate duration and store it as a string
     duration = end_time - start_time
 
     game_sessions.update_one(
         {"user_id": data.user_id},
         {"$set": {
-            end_field: end_time,
-            time_field: str(duration)
+            "puzzle_end": end_time,
+            "total_time": str(duration)
         }}
     )
 
-    # Final total time if last puzzle
-    if puzzle_number == 3:
-        p1_start = session.get("puzzle1_start")
-        if p1_start:
-            total_duration = end_time - p1_start
-            game_sessions.update_one(
-                {"user_id": data.user_id},
-                {"$set": {"total_time": str(total_duration)}}
-            )
-    
-    # After updating puzzleX_end and puzzleX_time
-    if puzzle_number < 3:
-        game_sessions.update_one(
-            {"user_id": data.user_id},
-            {"$set": {"current_puzzle": puzzle_number + 1}}
-        )
+    return {"message": "Puzzle completed"}
 
 
-    return {"message": f"Puzzle {puzzle_number} ended"}
-
-# -------- VALIDATE PUZZLE --------
+# -------- VALIDATE BOARD --------
 @router.post("/validate")
 def validate_board(data: BoardData):
     if -1 in data.board:
         return {"valid": False, "message": "Place all queens first."}
     
     board_tuple = tuple(data.board)
-    colors_tuple = tuple(tuple(row) for row in data.colors)  # make hashable
-
+    colors_tuple = tuple(tuple(row) for row in data.colors)
     valid = is_valid_board(board_tuple, colors_tuple)
+
     return {"valid": valid, "message": "Valid!" if valid else "Invalid arrangement!"}
 
 
 # -------- SOLVE PUZZLE --------
 @router.post("/solve")
 def solve_puzzle(data: BoardData):
-    solution = solve_n_queens(len(data.board), data.colors)
+    solution = solve_n_queens(8, data.colors)
     return {"solution": solution}
 
 
 # -------- HINT GENERATION --------
 @router.post("/hint")
 def get_hint(data: BoardData):
-    print("Board:", data.board)
-    print("Colors:", data.colors)
-    hint = get_next_hint(data.board, data.colors, data.room_id)
-    return {"hint": hint}  # Already a list or None
+    result = get_next_hint(data.board, data.colors)
+    return result
 
-
-# -------- DASHBOARD VIEW --------
+# -------- DASHBOARD --------
 @router.post("/dashboard")
 def get_user_dashboard(data: UserInfo):
     session = game_sessions.find_one({"user_id": data.user_id})
@@ -175,35 +137,116 @@ def get_user_dashboard(data: UserInfo):
         raise HTTPException(status_code=404, detail="Session not found")
 
     return {
-        "puzzle1": {
-            "start": session.get("puzzle1_start"),
-            "end": session.get("puzzle1_end")
-        },
-        "puzzle2": {
-            "start": session.get("puzzle2_start"),
-            "end": session.get("puzzle2_end")
-        },
-        "puzzle3": {
-            "start": session.get("puzzle3_start"),
-            "end": session.get("puzzle3_end")
-        },
+        "start": session.get("puzzle_start"),
+        "end": session.get("puzzle_end"),
         "total_time": session.get("total_time")
     }
 
 
-# -------- GLOBAL LEADERBOARD --------
+# -------- LEADERBOARD --------
 @router.get("/leaderboard")
 def leaderboard():
     players = list(game_sessions.find({"total_time": {"$ne": None}}))
-    players.sort(key=lambda x: x["total_time"])  # total_time is a string, so ideally store as timedelta
+    players.sort(key=lambda x: x["total_time"])  # Still a string—ideally store as timedelta
 
     return [
         {
             "user_id": p["user_id"],
             "total_time": p["total_time"],
-            "puzzle1": {"start": p.get("puzzle1_start"), "end": p.get("puzzle1_end")},
-            "puzzle2": {"start": p.get("puzzle2_start"), "end": p.get("puzzle2_end")},
-            "puzzle3": {"start": p.get("puzzle3_start"), "end": p.get("puzzle3_end")}
+            "start": p.get("puzzle_start"),
+            "end": p.get("puzzle_end")
         }
         for p in players
     ]
+
+
+# ------------------------------------------- SUDOKU GAME -------------------------------------------
+# -------- SUDOKU GENERATION --------
+@router.post("/sudoku/generate")
+def generate_sudoku(data: UserInfo):
+    session = game_sessions.find_one({"user_id": data.user_id})
+    
+    if not session:
+        game_sessions.insert_one({
+            "user_id": data.user_id,
+            "start_time": datetime.utcnow(),
+            "puzzle_start": None,
+            "puzzle_end": None,
+            "total_time": None,
+            "sudoku_start": None,
+            "sudoku_end": None,
+            "sudoku_time": None
+        })
+    elif session.get("sudoku_end"):
+        raise HTTPException(status_code=400, detail="Sudoku already completed")
+
+    puzzle, solution = generate_sudoku_puzzle()
+    
+    game_sessions.update_one(
+        {"user_id": data.user_id},
+        {"$set": {"sudoku_solution": solution}}
+    )
+
+    return {
+        "board": puzzle
+    }
+
+
+
+# -------- SUDOKU START TIMER --------
+@router.post("/sudoku/start")
+def start_sudoku_timer(data: TimerData):
+    session = game_sessions.find_one({"user_id": data.user_id})
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    
+    if session.get("sudoku_start"):
+        return {"message": "Sudoku already started"}
+
+    game_sessions.update_one(
+        {"user_id": data.user_id},
+        {"$set": {"sudoku_start": datetime.utcnow()}}
+    )
+    return {"message": "Sudoku timer started"}
+
+
+# -------- SUDOKU END TIMER --------
+@router.post("/sudoku/end-timer")
+def end_sudoku_timer(data: TimerData):
+    session = game_sessions.find_one({"user_id": data.user_id})
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    start_time = session.get("sudoku_start")
+    if not start_time:
+        raise HTTPException(status_code=400, detail="Sudoku not started yet")
+
+    end_time = datetime.utcnow()
+    duration = end_time - start_time
+
+    game_sessions.update_one(
+        {"user_id": data.user_id},
+        {"$set": {
+            "sudoku_end": end_time,
+            "sudoku_time": str(duration)
+        }}
+    )
+
+    return {"message": "Sudoku completed"}
+
+
+# -------- SUDOKU VALIDATION --------
+@router.post("/sudoku/validate")
+def validate_sudoku(data: SudokuBoard):
+    is_valid = is_valid_sudoku(data.board)
+    return {
+        "valid": is_valid,
+        "message": "Valid Sudoku!" if is_valid else "Invalid Sudoku!"
+    }
+
+
+# -------- SUDOKU HINT --------
+@router.post("/sudoku/hint")
+def sudoku_hint(data: SudokuBoard):
+    hint = get_sudoku_hint(data.board)
+    return {"hint": hint}
