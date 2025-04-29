@@ -25,26 +25,33 @@ const AuthPage = () => {
   const handleSubmit = async (e) => {
     e.preventDefault();
     const endpoint = isSignUp ? "/auth/register" : "/auth/login";
-
+    
     try {
       const response = await axios.post(`http://127.0.0.1:8000${endpoint}`, formData);
-      
-      // Show success dialog after login
+  
       setDialogMessage(response.data.message || "Logged in successfully!");
       setOpenDialog(true);
-
+  
       if (!isSignUp) {
-        // After showing the dialog, redirect to the dashboard
-        setTimeout(() => navigate("/dashboard"), 2000); // Delay navigation after dialog
+        // ✅ Store token in localStorage
+        const token = response.data.access_token;
+        localStorage.setItem("token", token);
+  
+        setTimeout(() => navigate("/dashboard"), 2000);
       } else {
-        // After successful sign up, redirect to login page
-        setTimeout(() => navigate("/login"), 2000); // Delay navigation after dialog
+        // After successful signup, just close the dialog and let the user manually login
+        setTimeout(() => {
+          // You don't need to navigate anywhere after sign-up.
+          setOpenDialog(false);
+        }, 2000);
       }
     } catch (error) {
       console.error("Error:", error.response?.data || error.message);
       alert(error.response?.data?.detail || "Something went wrong!");
     }
   };
+  
+  
 
   const handleDialogClose = () => {
     setOpenDialog(false); // Close dialog

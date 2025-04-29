@@ -1,7 +1,6 @@
 import React, { useEffect, useState, useRef } from "react";
 import {
   Button, Typography, Dialog, DialogActions, DialogContent, DialogTitle, IconButton
-  // , Table, TableHead, TableRow, TableCell, TableBody
 } from "@mui/material";
 import axios from "axios";
 import PlayCircleOutlineSharpIcon from '@mui/icons-material/PlayCircleOutlineSharp';
@@ -9,11 +8,9 @@ import HourglassTopIcon from '@mui/icons-material/HourglassTop';
 import RestartAltIcon from '@mui/icons-material/RestartAlt';
 import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline';
 import CancelRoundedIcon from '@mui/icons-material/CancelRounded';
-import InsertEmoticonIcon from '@mui/icons-material/InsertEmoticon';
 import InfoIcon from '@mui/icons-material/Info';
 import CloseIcon from '@mui/icons-material/Close';
 import TipsAndUpdatesIcon from '@mui/icons-material/TipsAndUpdates';
-//import EmojiEventsIcon from '@mui/icons-material/EmojiEvents';
 import { useNavigate } from "react-router-dom";
 import Navbar from "./Navbar";
 
@@ -30,16 +27,19 @@ const Puzzle1 = () => {
   const [showInfoDialog, setShowInfoDialog] = useState(false);
   const [showHintDialog, setShowHintDialog] = useState(false);
   const [hintMessage, setHintMessage] = useState("");
-  //const [showLeaderboardDialog, setShowLeaderboardDialog] = useState(false);
-  //const [leaderboardData, setLeaderboardData] = useState([]);
   const timerIntervalRef = useRef(null);
+  const [showInvalidDialog, setShowInvalidDialog] = useState(false);
 
-  const userId = "67d9147284d2d7833af40528";
+
+
   const room_id = "room1";
   const navigate = useNavigate();
 
   useEffect(() => {
-    axios.post("http://localhost:8000/game/generate", { user_id: userId })
+    const token = localStorage.getItem("token");
+    axios.post("http://localhost:8000/game/generate", { room_id }, {
+      headers: { Authorization: `Bearer ${token}` }
+    })
       .then(res => {
         setBoard(Array(boardSize).fill(-1));
         setColors(res.data.colors);
@@ -52,21 +52,30 @@ const Puzzle1 = () => {
     setPuzzleStarted(true);
     setTimerRunning(true);
     setTimeElapsed(0);
-
-    axios.post("http://localhost:8000/game/start", { user_id: userId, room_id })
+  
+    const token = localStorage.getItem("token");
+    axios.post("http://localhost:8000/game/start", { room_id }, {
+      headers: { Authorization: `Bearer ${token}` }
+    })
       .then(() => {
         timerIntervalRef.current = setInterval(() => setTimeElapsed(prev => prev + 1), 1000);
       })
       .catch(console.error);
   };
-
   const endTimer = () => {
-    axios.post("http://localhost:8000/game/validate", { user_id: userId, board, colors, room_id })
+    const token = localStorage.getItem("token");
+    axios.post("http://localhost:8000/game/validate", {
+      board, colors, room_id
+    }, {
+      headers: { Authorization: `Bearer ${token}` }
+    })
       .then(response => {
         if (response.data.valid) {
           setSolutionCorrect(true);
           setCompletionMessage("You have successfully completed the puzzle!");
-          axios.post("http://localhost:8000/game/end-timer", { user_id: userId, room_id });
+          axios.post("http://localhost:8000/game/end-timer", { room_id }, {
+            headers: { Authorization: `Bearer ${token}` }
+          });
         } else {
           setCompletionMessage("OOPS! Incorrect solution! Keep trying.");
         }
@@ -89,29 +98,69 @@ const Puzzle1 = () => {
     restartTimer();
   };
 
+  const isValidMove = (row, col) => {
+    for (let r = 0; r < boardSize; r++) {
+      if (r === row) continue; // 👈 Skip the current row
+  
+      // Column conflict
+      if (board[r] === col) {
+        return false;
+      }
+  
+      // Diagonal conflict
+      if (board[r] !== -1 && Math.abs(r - row) === Math.abs(board[r] - col)) {
+        return false;
+      }
+    }
+  
+    // Color restriction check
+    if (colors[row][col] === 9) {
+      return false;
+    }
+  
+    return true;
+  };
+  
+
   const placeQueen = (row, col) => {
     if (!puzzleStarted || solutionCorrect) return;
+  
     const newBoard = [...board];
+  
+    // If a queen is already in this cell, remove it
+    if (newBoard[row] === col) {
+      newBoard[row] = -1;
+      setBoard(newBoard);
+      return;
+    }
+  
+    // Otherwise, validate before placing
+    if (!isValidMove(row, col)) {
+      setShowInvalidDialog(true);
+      return;
+    }    
+  
     newBoard[row] = col;
     setBoard(newBoard);
   };
+  
 
   const getHint = async () => {
     try {
+      const token = localStorage.getItem("token");
       const response = await axios.post("http://localhost:8000/game/hint", {
-        user_id: userId,
-        board,
-        colors,
-        room_id
+        board, colors, room_id
+      }, {
+        headers: { Authorization: `Bearer ${token}` }
       });
-
-      if (response.data.hint && Array.isArray(response.data.hint)) {
+  
+      if (response.data.invalid.length > 0) {
+        setHintMessage(`Some queens are wrongly placed at rows: ${response.data.invalid.join(", ")}`);
+      } else {
         const [row, col] = response.data.hint;
         setHintMessage(`Try placing the 👑 on row ${row + 1}, column ${col + 1}`);
-        setShowHintDialog(true);
-      } else {
-        alert("No Hints Available");
       }
+      setShowHintDialog(true);
     } catch (error) {
       console.log("Error fetching hint", error);
     }
@@ -133,17 +182,6 @@ const Puzzle1 = () => {
 
   const handleNextPuzzle = () => navigate("/game/puzzle2");
 
-  // const openLeaderboard = () => {
-  //   // Replace with actual API call later
-  //   const mockData = [
-  //     { name: "Alice", time: 47 },
-  //     { name: "Bob", time: 55 },
-  //     { name: "Charlie", time: 65 },
-  //   ];
-  //   setLeaderboardData(mockData);
-  //   setShowLeaderboardDialog(true);
-  // };
-
   return (
     <div style={{
       backgroundColor: "black", minHeight: "100vh", color: "#b7a14e",
@@ -154,7 +192,7 @@ const Puzzle1 = () => {
         fontWeight: "bold", marginTop: "20px",
         display: "flex", alignItems: "center", justifyContent: "center"
       }}>
-        8 - 😀 Challenge
+        8 - 👑 Challenge
         <IconButton onClick={() => setShowInfoDialog(true)} style={{ color: "#b7a14e", marginLeft: "10px" }}>
           <InfoIcon />
         </IconButton>
@@ -200,7 +238,7 @@ const Puzzle1 = () => {
                 display: "flex", alignItems: "center", justifyContent: "center",
                 cursor: puzzleStarted && !solutionCorrect ? "pointer" : "not-allowed"
               }}>
-              {board[row] === col ? <InsertEmoticonIcon style={{ color: "#000" }} /> : null}
+              {board[row] === col ? <span style={{ fontSize: "24px" }}>👑</span> : null}
             </div>
           ))
         )}
@@ -210,10 +248,6 @@ const Puzzle1 = () => {
         <Button onClick={getHint} variant="contained" style={{ backgroundColor: "#b7a14e", color: "black" }}>
           <TipsAndUpdatesIcon /> Get Hint
         </Button>
-
-        {/* <Button onClick={openLeaderboard} variant="contained" style={{ backgroundColor: "#b7a14e", color: "black" }}>
-          <EmojiEventsIcon /> View Leaderboard
-        </Button> */}
       </div>
 
       {/* Hint Dialog */}
@@ -230,6 +264,25 @@ const Puzzle1 = () => {
         </DialogContent>
       </Dialog>
 
+      {/* Invalid Move Dialog */}
+      <Dialog open={showInvalidDialog} onClose={() => setShowInvalidDialog(false)}
+        PaperProps={{ sx: { backgroundColor: '#b7a14e', color: 'black' } }}>
+        <DialogTitle>
+          <Typography variant="h6" style={{ fontWeight: "bold", textAlign: "center" }}>
+            🎭 No Room on This Stage for the Queen 👑
+          </Typography>
+          <IconButton onClick={() => setShowInvalidDialog(false)} style={{ position: "absolute", right: "10px", top: "10px" }}>
+            <CloseIcon />
+          </IconButton>
+        </DialogTitle>
+        <DialogContent>
+          <Typography style={{ textAlign: "center" }}>
+            Invalid move: Queen cannot be placed here due to column, diagonal, or color conflict.
+          </Typography>
+        </DialogContent>
+      </Dialog>
+
+
       {/* Result Dialog */}
       <Dialog open={showResultDialog} onClose={() => setShowResultDialog(false)}
         PaperProps={{ sx: { backgroundColor: '#b7a14e', color: 'black', alignItems: 'center' } }}>
@@ -238,6 +291,17 @@ const Puzzle1 = () => {
         </DialogTitle>
         <DialogContent>
           <Typography>{completionMessage}</Typography>
+
+          {/* Add the unlock gif here */}
+          {solutionCorrect && (
+            <div style={{ textAlign: "center", marginTop: "20px" }}>
+              <img 
+                src="/unlock.gif" 
+                alt="Unlock Animation" 
+                style={{ maxWidth: "100%", height: "auto", margin: "20px 0" }} 
+              />
+            </div>
+          )}
         </DialogContent>
         <DialogActions>
           {solutionCorrect ? (
@@ -247,6 +311,7 @@ const Puzzle1 = () => {
           )}
         </DialogActions>
       </Dialog>
+
 
       {/* Info Dialog */}
       <Dialog open={showInfoDialog} onClose={() => setShowInfoDialog(false)}
@@ -258,38 +323,9 @@ const Puzzle1 = () => {
           </IconButton>
         </DialogTitle>
         <DialogContent>
-          <Typography>This is the 8×8 puzzle challenge. You need to place one "😀" on each row such that no two are in the same column or diagonal.</Typography>
+          <Typography>This is the 8×8 puzzle challenge. You need to place one "👑" on each row such that no two are in the same column or diagonal.</Typography>
         </DialogContent>
       </Dialog>
-
-      {/* Leaderboard Dialog
-      <Dialog open={showLeaderboardDialog} onClose={() => setShowLeaderboardDialog(false)}
-        PaperProps={{ sx: { backgroundColor: '#b7a14e', color: 'black' } }}>
-        <DialogTitle>
-          <Typography style={{ fontWeight: "bold", textAlign: "center" }}>Leaderboard 🏆</Typography>
-          <IconButton onClick={() => setShowLeaderboardDialog(false)} style={{ position: "absolute", right: "10px", top: "10px" }}>
-            <CloseIcon />
-          </IconButton>
-        </DialogTitle>
-        <DialogContent>
-          <Table>
-            <TableHead>
-              <TableRow>
-                <TableCell><strong>Name</strong></TableCell>
-                <TableCell><strong>Time (s)</strong></TableCell>
-              </TableRow>
-            </TableHead>
-            <TableBody>
-              {leaderboardData.map((player, index) => (
-                <TableRow key={index}>
-                  <TableCell>{player.name}</TableCell>
-                  <TableCell>{player.time}</TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </DialogContent>
-      </Dialog> */}
     </div>
   );
 };

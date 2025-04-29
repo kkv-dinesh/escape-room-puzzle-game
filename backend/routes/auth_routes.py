@@ -5,6 +5,9 @@ from datetime import datetime, timedelta
 from jose import jwt
 import os
 from database import users_collection
+from fastapi import Depends, Request
+from jose import JWTError, jwt
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
 # Secret Key for JWT
 SECRET_KEY = os.getenv("SECRET_KEY", "your_secret_key")
@@ -38,9 +41,23 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
 # Utility to create JWT token
 def create_access_token(data: dict, expires_delta: timedelta = None):
     to_encode = data.copy()
-    expire = datetime.utcnow() + (expires_delta or timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES))
-    to_encode.update({"exp": expire})
+    # Only add 'exp' if expiration is desired
+    if expires_delta:
+        expire = datetime.utcnow() + expires_delta
+        to_encode.update({"exp": expire})
     return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+
+security = HTTPBearer()
+
+def get_current_user(token: HTTPAuthorizationCredentials = Depends(security)):
+    try:
+        payload = jwt.decode(token.credentials, SECRET_KEY, algorithms=[ALGORITHM])
+        email = payload.get("sub")
+        if email is None:
+            raise HTTPException(status_code=401, detail="Invalid token payload")
+        return email
+    except JWTError:
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
 
 # Register User
 @router.post("/register")

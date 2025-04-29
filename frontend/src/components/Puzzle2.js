@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef } from "react";
+import React, { useEffect, useState, useRef, useMemo } from "react";
 import {
   Button, Typography, Dialog, DialogActions, DialogContent, DialogTitle,
   IconButton, TextField
@@ -15,7 +15,7 @@ import TipsAndUpdatesIcon from '@mui/icons-material/TipsAndUpdates';
 import { useNavigate } from "react-router-dom";
 import Navbar from "./Navbar";
 
-const Puzzle1 = () => {
+const Puzzle2 = () => {
   const boardSize = 9;
   const [board, setBoard] = useState([]);
   const [initialBoard, setInitialBoard] = useState([]);
@@ -30,12 +30,25 @@ const Puzzle1 = () => {
   const [hintMessage, setHintMessage] = useState("");
 
   const timerIntervalRef = useRef(null);
-  const userId = "67d9147284d2d7833af40528";
-  const room_id = "room1";
+  const room_id = "room2";  // Example room_id, change as per your use case
   const navigate = useNavigate();
 
+  const token = localStorage.getItem("token");
+
+  // Memoize headers to avoid unnecessary re-renders
+  const headers = useMemo(() => {
+    return {
+      Authorization: `Bearer ${token}`,
+    };
+  }, [token]);
+
   useEffect(() => {
-    axios.post("http://localhost:8000/game/sudoku/generate", { user_id: userId })
+    if (!token) {
+      console.error("Token not found in localStorage");
+      return;
+    }
+
+    axios.post("http://localhost:8000/game/sudoku/generate", { user_id: token, room_id }, { headers })
       .then(res => {
         if (res.data.board) {
           setBoard(res.data.board);
@@ -45,7 +58,7 @@ const Puzzle1 = () => {
         }
       })
       .catch(console.error);
-  }, []);
+  }, [token, headers]); // 'headers' will now only change when 'token' changes
 
   const startTimer = () => {
     if (timerRunning) return;
@@ -53,7 +66,7 @@ const Puzzle1 = () => {
     setTimerRunning(true);
     setTimeElapsed(0);
 
-    axios.post("http://localhost:8000/game/sudoku/start", { user_id: userId, room_id })
+    axios.post("http://localhost:8000/game/sudoku/start", { user_id: token, room_id }, { headers })
       .then(() => {
         timerIntervalRef.current = setInterval(() => setTimeElapsed(prev => prev + 1), 1000);
       })
@@ -61,12 +74,12 @@ const Puzzle1 = () => {
   };
 
   const endTimer = () => {
-    axios.post("http://localhost:8000/game/sudoku/validate", { user_id: userId, board, room_id })
+    axios.post("http://localhost:8000/game/sudoku/validate", { user_id: token, board, room_id }, { headers })
       .then(response => {
         if (response.data.valid) {
           setSolutionCorrect(true);
           setCompletionMessage("You have successfully completed the puzzle!");
-          axios.post("http://localhost:8000/game/sudoku/end-timer", { user_id: userId, room_id });
+          axios.post("http://localhost:8000/game/sudoku/end-timer", { user_id: token, room_id }, { headers });
         } else {
           setCompletionMessage("OOPS! Incorrect solution! Keep trying.");
         }
@@ -104,14 +117,17 @@ const Puzzle1 = () => {
   const getHint = async () => {
     try {
       const response = await axios.post("http://localhost:8000/game/sudoku/hint", {
-        user_id: userId,
+        user_id: token,
         board,
         room_id
-      });
-
-      if (response.data.hint && Array.isArray(response.data.hint)) {
-        const [row, col] = response.data.hint;
-        setHintMessage(`Try placing the number at row ${row + 1}, column ${col + 1}`);
+      }, { headers });
+  
+      // Check if the hint response contains the expected hint_type
+      if (response.data && response.data.hint_type) {
+        const { message } = response.data;  // Only destructure 'message'
+  
+        // Update the UI with the hint message
+        setHintMessage(message);
         setShowHintDialog(true);
       } else {
         alert("No Hints Available");
@@ -120,13 +136,14 @@ const Puzzle1 = () => {
       console.log("Error fetching hint", error);
     }
   };
+  
 
   const handleRetry = () => {
     setShowResultDialog(false);
-    navigate("/game/puzzle1");
+    navigate("/game/puzzle2");
   };
 
-  const handleNextPuzzle = () => navigate("/game/puzzle2");
+  const handleNextPuzzle = () => navigate("/dashboard");
 
   return (
     <div style={{
@@ -221,22 +238,28 @@ const Puzzle1 = () => {
       </Dialog>
 
       {/* Result Dialog */}
+
       <Dialog open={showResultDialog} onClose={() => setShowResultDialog(false)}
         PaperProps={{ sx: { backgroundColor: '#b7a14e', color: 'black', alignItems: 'center' } }}>
         <DialogTitle sx={{ color: 'black', fontWeight: 'bold' }}>
           {solutionCorrect ? "Congratulations!" : "OOPS!"}
         </DialogTitle>
         <DialogContent>
+          {solutionCorrect && (
+            // Display the GIF when the solution is correct
+            <img src="/unlock.gif" alt="Unlock Animation" style={{ maxWidth: "100%", height: "auto", marginBottom: "20px" }} />
+          )}
           <Typography>{completionMessage}</Typography>
         </DialogContent>
         <DialogActions>
           {solutionCorrect ? (
-            <Button onClick={handleNextPuzzle} sx={{ backgroundColor: 'black', color: 'white' }}>Next Puzzle</Button>
+            <Button onClick={handleNextPuzzle} sx={{ backgroundColor: 'black', color: 'white' }}>Dashboard</Button>
           ) : (
             <Button onClick={handleRetry} sx={{ backgroundColor: 'black', color: 'white' }}>Retry</Button>
           )}
         </DialogActions>
       </Dialog>
+
 
       {/* Info Dialog */}
       <Dialog open={showInfoDialog} onClose={() => setShowInfoDialog(false)}
@@ -255,4 +278,4 @@ const Puzzle1 = () => {
   );
 };
 
-export default Puzzle1;
+export default Puzzle2;

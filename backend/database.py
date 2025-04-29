@@ -11,7 +11,6 @@ db = client["escape_room"]
 game_sessions = db["game_sessions"]
 rooms_collection = db["rooms"]
 users_collection = db["users"]
-game_collection = db["game_data"]
 
 def init_db():
     if rooms_collection.count_documents({}) == 0:
